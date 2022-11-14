@@ -63,11 +63,11 @@
 
         <LinearLayout
             android:id="@+id/NameLayout"
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginLeft="15dp"
-            android:layout_marginTop="15dp"
-            android:layout_marginBottom="10dp"
+            android:layout_marginTop="13dp"
+            android:layout_marginBottom="2dp"
             android:orientation="horizontal">
 
             <TextView
@@ -79,6 +79,16 @@
                 android:textColor="#696969"
                 android:textSize="23sp"
                 android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/distance"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:layout_marginLeft="8dp"
+                android:fontFamily="@font/font_regular"
+                android:textColor="#D3757A"
+                android:textSize="18sp" />
 
         </LinearLayout>
 

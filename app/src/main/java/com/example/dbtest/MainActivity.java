@@ -14,13 +14,17 @@ import android.os.Bundle;
 import android.os.StrictMode;
 import android.util.Log;
 import android.view.View;
+import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
 
+import com.google.android.gms.maps.model.Polyline;
+import com.google.android.gms.maps.model.PolylineOptions;
 import com.google.gson.Gson;
 import com.naver.maps.geometry.LatLng;
+import com.naver.maps.map.CameraAnimation;
+import com.naver.maps.map.CameraUpdate;
 import com.naver.maps.map.LocationTrackingMode;
 import com.naver.maps.map.MapView;
 import com.naver.maps.map.NaverMap;
@@ -29,11 +33,18 @@ import com.naver.maps.map.UiSettings;
 import com.naver.maps.map.overlay.Marker;
 import com.naver.maps.map.overlay.MultipartPathOverlay;
 import com.naver.maps.map.overlay.Overlay;
+import com.naver.maps.map.overlay.OverlayImage;
+import com.naver.maps.map.overlay.PolylineOverlay;
 import com.naver.maps.map.util.FusedLocationSource;
 import com.naver.maps.map.util.MarkerIcons;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
@@ -53,29 +64,29 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     LinearLayout infoLayout, mainLayout;
     ImageView daynightBtn;
-    MultipartPathOverlay mpath;
     boolean[] clicked;
     boolean[] nclicked;
     boolean daynight = true;
     double latitude, longitude;
-    TextView location_t, place, address, phonenum, worktime;
-    Typeface customFont; //setTypeface(customFont, Typeface.BOLD);로 설정 가능
-    ArrayList<Pharmacy> pharmacy = new ArrayList<Pharmacy>();
-    ArrayList<Info> info = new ArrayList<Info>();
-    ArrayList<Users> users = new ArrayList<Users>();
-    ArrayList<Marker> markers = new ArrayList<Marker>();
-    ArrayList<Marker> nmarkers = new ArrayList<Marker>();
-    ArrayList<Pharmacy> npharmacy = new ArrayList<Pharmacy>();
-    ArrayList<Info> ninfo = new ArrayList<Info>();
-    ArrayList<Integer> list = new ArrayList<Integer>();
-    ArrayList<Integer> nlist = new ArrayList<Integer>();
+    TextView location_t, name, address, phonenum, worktime, distance_t;
+    Typeface customFont;
+    ArrayList<Pharmacy> pharmacy = new ArrayList<>();
+    ArrayList<Info> info = new ArrayList<>();
+    ArrayList<Users> users = new ArrayList<>();
+    ArrayList<Marker> markers = new ArrayList<>();
+    ArrayList<Marker> nmarkers = new ArrayList<>();
+    ArrayList<Pharmacy> npharmacy = new ArrayList<>();
+    ArrayList<Info> ninfo = new ArrayList<>();
+    ArrayList<Integer> list = new ArrayList<>();
+    ArrayList<Integer> nlist = new ArrayList<>();
     int fin = 0; int nfin = 0;
     int id = 0;
+    String distance;
     double ulatitude, ulongitude;
-    Long distance;
 
     DatabaseHelper dbHelper;
     SQLiteDatabase db = null;
+    CameraUpdate cameraUpdate;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -90,8 +101,28 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         customFont = ResourcesCompat.getFont(this, R.font.font_regular);
         // 폰트 가져오기
 
+        daynightBtn = findViewById(R.id.daynightBtn);
+
+        infoLayout = findViewById(R.id.InfoLayout);
+        mainLayout = findViewById(R.id.MainLayout);
+        name = findViewById(R.id.name); name.setTypeface(customFont, Typeface.BOLD);
+        address = findViewById(R.id.address); address.setTypeface(customFont, Typeface.NORMAL);
+        phonenum = findViewById(R.id.phonenum); phonenum.setTypeface(customFont, Typeface.NORMAL);
+        worktime = findViewById(R.id.worktime); worktime.setTypeface(customFont, Typeface.NORMAL);
+        distance_t = findViewById(R.id.distance);
+
+        dbHelper = new DatabaseHelper(this);
+        db = dbHelper.getWritableDatabase();
+        db.execSQL("DELETE FROM users");
+        db.execSQL("UPDATE info SET id = 0");
+        dbHelper.close();
+
         loadData();
         // db 데이터 불러오기
+
+        map = findViewById(R.id.map);
+        map.onCreate(savedInstanceState);
+        map.getMapAsync(this);
 
         locationSource = new FusedLocationSource(this, LOCATION_PERMISSION_REQUEST_CODE);
 
@@ -112,24 +143,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             }
         });
         // 상단 현재 사용자 주소 표시
-
-        daynightBtn = findViewById(R.id.daynightBtn);
-
-        map = findViewById(R.id.map);
-        map.onCreate(savedInstanceState);
-        map.getMapAsync(this);
-
-        infoLayout = findViewById(R.id.InfoLayout);
-        mainLayout = findViewById(R.id.MainLayout);
-        place = findViewById(R.id.name); place.setTypeface(customFont, Typeface.BOLD);
-        address = findViewById(R.id.address); address.setTypeface(customFont, Typeface.NORMAL);
-        phonenum = findViewById(R.id.phonenum); phonenum.setTypeface(customFont, Typeface.NORMAL);
-        worktime = findViewById(R.id.worktime); worktime.setTypeface(customFont, Typeface.NORMAL);
-
-        dbHelper = new DatabaseHelper(this);
-        db = dbHelper.getWritableDatabase();
-        db.execSQL("DELETE FROM users");
-        dbHelper.close();
     }
 
     @Override
@@ -137,6 +150,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         dbHelper = new DatabaseHelper(this);
         db = dbHelper.getWritableDatabase();
         db.execSQL("DELETE FROM users");
+        db.execSQL("UPDATE info SET id = 0");
         dbHelper.close();
         super.onDestroy();
     }
@@ -187,6 +201,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     for(int i = 0; i < npharmacy.size(); i++) { nmarkers.get(i).setMap(null); }
                     setInfo();
                 } // 주간 버튼 클릭
+
+                cameraUpdate = CameraUpdate.scrollTo(new LatLng(users.get(users.size()-1).latitude, users.get(users.size()-1).longitude)).animate(CameraAnimation.Easing);
+                naverMap.moveCamera(cameraUpdate);
             }
         });
         // 주간, 야간 설정
@@ -204,18 +221,20 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         db = dbHelper.getReadableDatabase();
         Cursor c = db.rawQuery("SELECT * FROM pharmacy", null);
         if (c.moveToFirst()) {
-            while (c.moveToNext()) {
+            do {
                 pharmacy.add(new Pharmacy(c.getString(0), c.getString(1), c.getString(2),c.getString(3)));
-            }
+            } while (c.moveToNext());
         } else pharmacy = null;
         if(c.moveToFirst())
             c.close();
 
         Cursor c2 = db.rawQuery("SELECT * FROM info", null);
         if (c2.moveToFirst()) {
-            while (c2.moveToNext()) {
-                info.add(new Info(c2.getString(0), c2.getInt(1), c2.getDouble(2), c2.getDouble(3), c2.getString(4), c2.getDouble(5)));
+            do{
+                info.add(new Info(c2.getString(0), c2.getInt(1), c2.getDouble(2), c2.getDouble(3), c2.getString(4), c2.getString(5)));
+                Log.d("info", c2.getString(0));
             }
+            while (c2.moveToNext());
         } else info = null;
 
         if(c2.moveToFirst())
@@ -223,47 +242,111 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         Cursor c3 = db.rawQuery("SELECT * FROM pharmacy NATURAL JOIN info WHERE nighttime = 'Y'", null);
         if (c3.moveToFirst()) {
-            while (c3.moveToNext()) {
+            do{
                 npharmacy.add(new Pharmacy(c3.getString(0), c3.getString(1), c3.getString(2),c3.getString(3)));
-                ninfo.add(new Info(c3.getString(0), c3.getInt(4), c3.getDouble(5), c3.getDouble(6), c3.getString(7), c3.getDouble(8)));
+                ninfo.add(new Info(c3.getString(0), c3.getInt(4), c3.getDouble(5), c3.getDouble(6), c3.getString(7), c3.getString(8)));
             }
+            while (c3.moveToNext());
         } else {
             npharmacy = null;
             ninfo = null;
         }
         if(c3.moveToFirst())
             c3.close();
+
         dbHelper.close();
     } // db 불러오기
-
-    private void insertData(){
-        dbHelper = new DatabaseHelper(this);
-        db = dbHelper.getWritableDatabase();
-        db.execSQL("INSERT INTO users VALUES ("+id+","+latitude+","+longitude+")");
-        users.add(new Users(id, latitude, longitude));
-        Toast.makeText(getApplicationContext(), id+"와"+latitude+"와"+longitude,Toast.LENGTH_LONG).show();
-        id++;
-        dbHelper.close();
-    } //users 테이블에 사용자 id, latitude, longitude 넣기
 
     private void setMarker(int i, String place, Double latitude, Double longitude){
         marker = new Marker();
         marker.setWidth(140); marker.setHeight(180);
         marker.setIcon(MarkerIcons.BLACK);
-        marker.setIconTintColor(Color.GRAY);
         marker.setCaptionText(place); // 이름
         marker.setPosition(new LatLng(latitude, longitude)); //위,경도
         marker.setMap(naverMap);
-        if(naverMap.isNightModeEnabled() == true) nmarkers.add(i, marker);
-        else markers.add(i, marker);
-    }
+        if(naverMap.isNightModeEnabled() == true) {
+            marker.setIcon(OverlayImage.fromResource(R.drawable.nmarker));
+            nmarkers.add(i, marker);
+        }
+        else {
+            marker.setIcon(OverlayImage.fromResource(R.drawable.marker));
+            markers.add(i, marker);
+        }
+    } // 마커 표시하기
 
     public void setLocation(){
         gpsTracker = new GpsTracker(MainActivity.this);
         latitude = gpsTracker.getLatitude();
         longitude = gpsTracker.getLongitude();
         insertData();
-    }
+    } // 사용자 현재 위경도 구하기
+
+    private void insertData(){
+        dbHelper = new DatabaseHelper(this);
+        db = dbHelper.getWritableDatabase();
+        db.execSQL("INSERT INTO users VALUES ("+id+","+latitude+","+longitude+")");
+        users.add(new Users(id, latitude, longitude));
+        db.execSQL("UPDATE info SET id="+id);
+        for(int i = 0; i < info.size(); i++){ info.get(i).setId(id);
+        }
+
+        getDistance();
+        // 사용자의 마지막 위경도 가져오기
+//        id++;
+
+        for(int i = 0; i < info.size(); i++){ CalDistance(i); }
+
+        int j = 0;
+        Cursor c = db.rawQuery("SELECT distance FROM info WHERE nighttime = 'Y'", null);
+        if (c.moveToFirst()) {
+            do {
+                ninfo.get(j).setDistance(c.getString(0)); j++;
+            } while (c.moveToNext());
+        } else Log.d("distance", "ninfo distance 안됨");
+        if(c.moveToFirst())
+            c.close();
+        db.close();
+
+        id++;
+    } // users 테이블에 사용자 id, latitude, longitude 넣기, info 테이블에 info, distance 넣기
+
+    private void getDistance(){
+        dbHelper = new DatabaseHelper(this);
+        db = dbHelper.getReadableDatabase();
+        Cursor c = db.rawQuery("SELECT latitude, longitude FROM users", null);
+        if (c.moveToFirst()) {
+            do{
+                ulatitude = c.getDouble(0);
+                ulongitude = c.getDouble(1);
+            }
+            while (c.moveToNext());
+        } else{
+            ulatitude = 0;
+            ulongitude = 0;
+        }
+        if(c.moveToFirst())
+            c.close();
+        dbHelper.close();
+    } // user 테이블에서 가장 최근 위경도 가져오기
+
+    private void CalDistance(int i){
+        Double EARTH_R = 6371000.0;
+        Double rad = Math.PI / 180;
+        Double radLat1 = rad * ulatitude;
+        Double radLat2 = rad * info.get(i).latitude;
+        Double radDist = rad * (ulongitude - info.get(i).longitude);
+
+        Double dist = Math.sin(radLat1) * Math.sin(radLat2);
+        dist+= Math.cos(radLat1) * Math.cos(radLat2) * Math.cos(radDist);
+        Double ret = EARTH_R * Math.acos(dist);
+        distance = Math.round(ret)+""; // 미터 단위
+
+        dbHelper = new DatabaseHelper(this);
+        db = dbHelper.getReadableDatabase();
+        db.execSQL("UPDATE info SET distance="+distance+" WHERE name='"+info.get(i).name+"'");
+        info.get(i).setDistance(distance);
+    } // user 위경도와 info 위경도를 통해 거리 구하고 info의 distance에 넣기
+
 
     private void setInfo(){
         clicked = new boolean[pharmacy.size()];
@@ -277,26 +360,29 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 public boolean onClick(@NonNull Overlay overlay) {
                     list.add(fin, j);
                     if(clicked[j] == false && (fin == 0 || list.get(fin-1) == j)) {
-                        markers.get(j).setIconTintColor(Color.parseColor("#AC7278"));
+                        markers.get(j).setIcon(OverlayImage.fromResource(R.drawable.marker_clicked));
                         map.setLayoutParams(new LinearLayout.LayoutParams(1430, 1375));
                         setText(j); clicked[j] = true;
+
                     } else if(clicked[j] == true && list.get(fin-1) == j){
-                        markers.get(j).setIconTintColor(Color.GRAY);
+                        markers.get(j).setIcon(OverlayImage.fromResource(R.drawable.marker));
                         map.setLayoutParams(new LinearLayout.LayoutParams(1430, 2450));
                         clicked[j] = false;
                     }
                     else if(clicked[j] == false && list.get(fin-1) != j){
-                        markers.get(j).setIconTintColor(Color.parseColor("#AC7278"));
-                        markers.get(list.get(fin-1)).setIconTintColor(Color.GRAY);
+                        markers.get(j).setIcon(OverlayImage.fromResource(R.drawable.marker_clicked));
+                        markers.get(list.get(fin-1)).setIcon(OverlayImage.fromResource(R.drawable.marker));
                         map.setLayoutParams(new LinearLayout.LayoutParams(1430, 1375));
                         setText(j); clicked[j] = true; clicked[list.get(fin-1)] = false;
                     }
+                    cameraUpdate = CameraUpdate.scrollTo(new LatLng(info.get(j).latitude, info.get(j).longitude)).animate(CameraAnimation.Easing);
+                    naverMap.moveCamera(cameraUpdate);
                     fin += 1;
                     return true;
                 }
             });
         }
-    }
+    } // 주간 약국 정보
 
     private void setnInfo(){
         nclicked = new boolean[npharmacy.size()];
@@ -310,45 +396,48 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 public boolean onClick(@NonNull Overlay overlay) {
                     nlist.add(nfin, j);
                     if(nclicked[j] == false && (nfin == 0 || nlist.get(nfin-1) == j)) {
-                        nmarkers.get(j).setIconTintColor(Color.parseColor("#AC7278"));
+                        nmarkers.get(j).setIcon(OverlayImage.fromResource(R.drawable.nmarker_clicked));
                         map.setLayoutParams(new LinearLayout.LayoutParams(1430, 1375));
                         setText(j); nclicked[j] = true;
                     } else if(nclicked[j] == true && nlist.get(nfin-1) == j){
-                        nmarkers.get(j).setIconTintColor(Color.GRAY);
+                        nmarkers.get(j).setIcon(OverlayImage.fromResource(R.drawable.nmarker));
                         map.setLayoutParams(new LinearLayout.LayoutParams(1430, 2450));
                         nclicked[j] = false;
                     }
                     else if(nclicked[j] == false && nlist.get(nfin-1) != j){
-                        nmarkers.get(j).setIconTintColor(Color.parseColor("#AC7278"));
-                        nmarkers.get(nlist.get(nfin-1)).setIconTintColor(Color.GRAY);
+                        nmarkers.get(j).setIcon(OverlayImage.fromResource(R.drawable.nmarker_clicked));
+                        nmarkers.get(nlist.get(nfin-1)).setIcon(OverlayImage.fromResource(R.drawable.nmarker));
                         map.setLayoutParams(new LinearLayout.LayoutParams(1430, 1375));
                         setText(j); nclicked[j] = true; nclicked[nlist.get(nfin-1)] = false;
                     }
+                    cameraUpdate = CameraUpdate.scrollTo(new LatLng(ninfo.get(j).latitude, ninfo.get(j).longitude)).animate(CameraAnimation.Easing);
+                    naverMap.moveCamera(cameraUpdate);
                     nfin += 1;
                     return true;
                 }
             });
         }
-    }
-
+    } // 야간 약국 정보
 
     private void setText(int idx){
-        //address 구 수정해야됨 쪽구름로
         if(naverMap.isNightModeEnabled() == false){
-            place.setText(pharmacy.get(idx).name);
-            address.setText(pharmacy.get(idx).address.substring(pharmacy.get(idx).address.lastIndexOf("구")+1));
+            name.setText(pharmacy.get(idx).name);
+            address.setText(pharmacy.get(idx).address.replace("전라북도 전주시 덕진구", ""));
             phonenum.setText(pharmacy.get(idx).phonenum);
             worktime.setText(pharmacy.get(idx).worktime);
+            distance_t.setText(info.get(idx).distance+"m");
+            distance_t.setTextColor(Color.parseColor("#D3757A"));
         }
         else{
-            place.setText(npharmacy.get(idx).name);
-            address.setText(npharmacy.get(idx).address.substring(npharmacy.get(idx).address.lastIndexOf("구")+1));
+            name.setText(npharmacy.get(idx).name);
+            address.setText(npharmacy.get(idx).address.replace("전라북도 전주시 덕진구", ""));
             phonenum.setText(npharmacy.get(idx).phonenum);
             worktime.setText(npharmacy.get(idx).worktime);
+            distance_t.setText(ninfo.get(idx).distance+"m");
+            distance_t.setTextColor(Color.parseColor("#2C8A85"));
         }
-    }
+    } // 정보 표시
 
-    // 위,경도 -> 주소 변환
     public String getAddress() {
         String finalAddress = "도로명주소 미발견";
         String finalAddress2 = "지번주소 미발견";
@@ -385,8 +474,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
             //도로명 주소
             if (conn != null) {
-                conn.setConnectTimeout(5000);
-                conn.setReadTimeout(5000);
+                conn.setConnectTimeout(1000); //5000
+                conn.setReadTimeout(1000); //5000
                 try {
                     conn.setRequestMethod("GET");
                     Log.d("request", "conn 됨");
@@ -485,16 +574,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         } else {
             return finalAddress2;
         }
-    }
-
-    public void GetRoute(){
-
-    }
-
-//    public void showInfo(){
-//        AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this, R.style.
-//        View view = LayoutInflater.from(MainActivity.this).inflate(R.layout.acitivity_info, (LinearLayout)findViewById(R.id.MainLayout));
-//
-//    }
+    } // 현재 위치 주소 가져오기
 
 }
