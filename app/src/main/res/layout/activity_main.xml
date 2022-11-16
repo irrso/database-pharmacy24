@@ -23,7 +23,7 @@
             android:layout_marginBottom="10dp"
             android:fontFamily="@font/font_regular"
             android:gravity="center"
-            android:textColor="#696969"
+            android:textColor="@color/color_selector"
             android:textSize="21sp"
             android:textStyle="bold" />
 
@@ -123,8 +123,10 @@
                 android:id="@+id/address"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginLeft="8dp"
+                android:layout_marginLeft="5dp"
+                android:ellipsize="marquee"
                 android:fontFamily="@font/font_regular"
+                android:singleLine="true"
                 android:textSize="18sp"
                 android:textStyle="normal" />
         </LinearLayout>
@@ -198,7 +200,7 @@
                 android:id="@+id/worktime"
                 android:layout_width="279dp"
                 android:layout_height="wrap_content"
-                android:layout_marginLeft="15dp"
+                android:layout_marginLeft="13dp"
                 android:fontFamily="@font/font_regular"
                 android:textSize="18sp"
                 android:textStyle="normal" />

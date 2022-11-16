@@ -10,17 +10,16 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.location.Location;
 import android.os.Bundle;
 import android.os.StrictMode;
 import android.util.Log;
 import android.view.View;
-import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
-import com.google.android.gms.maps.model.Polyline;
-import com.google.android.gms.maps.model.PolylineOptions;
 import com.google.gson.Gson;
 import com.naver.maps.geometry.LatLng;
 import com.naver.maps.map.CameraAnimation;
@@ -31,26 +30,23 @@ import com.naver.maps.map.NaverMap;
 import com.naver.maps.map.OnMapReadyCallback;
 import com.naver.maps.map.UiSettings;
 import com.naver.maps.map.overlay.Marker;
-import com.naver.maps.map.overlay.MultipartPathOverlay;
 import com.naver.maps.map.overlay.Overlay;
 import com.naver.maps.map.overlay.OverlayImage;
-import com.naver.maps.map.overlay.PolylineOverlay;
 import com.naver.maps.map.util.FusedLocationSource;
 import com.naver.maps.map.util.MarkerIcons;
 
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.ProtocolException;
 import java.net.URL;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 
 public class MainActivity extends AppCompatActivity implements OnMapReadyCallback {
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 1000;
@@ -69,7 +65,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     boolean daynight = true;
     double latitude, longitude;
     TextView location_t, name, address, phonenum, worktime, distance_t;
-    Typeface customFont;
     ArrayList<Pharmacy> pharmacy = new ArrayList<>();
     ArrayList<Info> info = new ArrayList<>();
     ArrayList<Users> users = new ArrayList<>();
@@ -83,32 +78,42 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     int id = 0;
     String distance;
     double ulatitude, ulongitude;
+    private long backKeyPressedTime=0;
 
     DatabaseHelper dbHelper;
     SQLiteDatabase db = null;
     CameraUpdate cameraUpdate;
+    Long curtime;
+    SimpleDateFormat format = new SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()); //Locale.KOREA
+    Boolean over_time;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        curtime = System.currentTimeMillis();
+        try {
+            Date night = format.parse("21:30:00");
+            Date now = format.parse(format.format(curtime));
+            over_time = now.after(night); Log.d("time", over_time +"");
+        } catch (ParseException e) {
+            Log.d("time", "현재 시간과 비교 못함"); e.printStackTrace();
+        } // 현재 시간과 9시 30분 비교
+
         if (android.os.Build.VERSION.SDK_INT > 9) {
             StrictMode.ThreadPolicy policy = new StrictMode.ThreadPolicy.Builder().permitAll().build();
             StrictMode.setThreadPolicy(policy);
         }
 
-        customFont = ResourcesCompat.getFont(this, R.font.font_regular);
-        // 폰트 가져오기
-
         daynightBtn = findViewById(R.id.daynightBtn);
 
         infoLayout = findViewById(R.id.InfoLayout);
         mainLayout = findViewById(R.id.MainLayout);
-        name = findViewById(R.id.name); name.setTypeface(customFont, Typeface.BOLD);
-        address = findViewById(R.id.address); address.setTypeface(customFont, Typeface.NORMAL);
-        phonenum = findViewById(R.id.phonenum); phonenum.setTypeface(customFont, Typeface.NORMAL);
-        worktime = findViewById(R.id.worktime); worktime.setTypeface(customFont, Typeface.NORMAL);
+        name = findViewById(R.id.name);
+        address = findViewById(R.id.address);address.setSelected(true);
+        phonenum = findViewById(R.id.phonenum);
+        worktime = findViewById(R.id.worktime);
         distance_t = findViewById(R.id.distance);
 
         dbHelper = new DatabaseHelper(this);
@@ -146,6 +151,16 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     @Override
+    public void onBackPressed() {
+        if (System.currentTimeMillis() > backKeyPressedTime + 2000) {
+            backKeyPressedTime = System.currentTimeMillis();
+            return;
+        }
+
+        if (System.currentTimeMillis() <= backKeyPressedTime + 2000) { finish(); }
+    } // 뒤로가기 2번 클릭 시 앱 종료
+
+    @Override
     protected void onDestroy() {
         dbHelper = new DatabaseHelper(this);
         db = dbHelper.getWritableDatabase();
@@ -178,6 +193,13 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         naverMap.setLocationTrackingMode(LocationTrackingMode.Follow);
         naverMap.setMapType(NaverMap.MapType.Navi);
         // 기본 설정
+
+        if(over_time == true){
+            daynightBtn.setBackgroundResource(R.drawable.moon);
+            naverMap.setNightModeEnabled(true);
+            daynight = false;
+            setnInfo();
+        } // 9:30 이후에 야간 모드
 
         daynightBtn.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -259,7 +281,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     private void setMarker(int i, String place, Double latitude, Double longitude){
         marker = new Marker();
-        marker.setWidth(140); marker.setHeight(180);
+        marker.setWidth(140); marker.setHeight(180); // ** 크기 조절
         marker.setIcon(MarkerIcons.BLACK);
         marker.setCaptionText(place); // 이름
         marker.setPosition(new LatLng(latitude, longitude)); //위,경도
@@ -329,24 +351,24 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         dbHelper.close();
     } // user 테이블에서 가장 최근 위경도 가져오기
 
-    private void CalDistance(int i){
-        Double EARTH_R = 6371000.0;
-        Double rad = Math.PI / 180;
-        Double radLat1 = rad * ulatitude;
-        Double radLat2 = rad * info.get(i).latitude;
-        Double radDist = rad * (ulongitude - info.get(i).longitude);
+    public void CalDistance(int i) {
+        // users 위,경도
+        Location u_location = new Location( "user");
+        u_location.setLatitude(ulatitude);
+        u_location.setLongitude(ulongitude);
 
-        Double dist = Math.sin(radLat1) * Math.sin(radLat2);
-        dist+= Math.cos(radLat1) * Math.cos(radLat2) * Math.cos(radDist);
-        Double ret = EARTH_R * Math.acos(dist);
-        distance = Math.round(ret)+""; // 미터 단위
+        // pharmacy 위,경도
+        Location ph_location = new Location( "pharmacy");
+        ph_location.setLatitude(info.get(i).latitude);
+        ph_location.setLongitude(info.get(i).longitude);
+
+        distance = Math.round(u_location.distanceTo(ph_location))+"";
 
         dbHelper = new DatabaseHelper(this);
         db = dbHelper.getReadableDatabase();
         db.execSQL("UPDATE info SET distance="+distance+" WHERE name='"+info.get(i).name+"'");
         info.get(i).setDistance(distance);
     } // user 위경도와 info 위경도를 통해 거리 구하고 info의 distance에 넣기
-
 
     private void setInfo(){
         clicked = new boolean[pharmacy.size()];
@@ -361,18 +383,18 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     list.add(fin, j);
                     if(clicked[j] == false && (fin == 0 || list.get(fin-1) == j)) {
                         markers.get(j).setIcon(OverlayImage.fromResource(R.drawable.marker_clicked));
-                        map.setLayoutParams(new LinearLayout.LayoutParams(1430, 1375));
+                        map.setLayoutParams(new LinearLayout.LayoutParams(1430, 1375)); // ** 크기 조절
                         setText(j); clicked[j] = true;
 
                     } else if(clicked[j] == true && list.get(fin-1) == j){
                         markers.get(j).setIcon(OverlayImage.fromResource(R.drawable.marker));
-                        map.setLayoutParams(new LinearLayout.LayoutParams(1430, 2450));
+                        map.setLayoutParams(new LinearLayout.LayoutParams(1430, 2450)); // ** 크기 조절
                         clicked[j] = false;
                     }
                     else if(clicked[j] == false && list.get(fin-1) != j){
                         markers.get(j).setIcon(OverlayImage.fromResource(R.drawable.marker_clicked));
                         markers.get(list.get(fin-1)).setIcon(OverlayImage.fromResource(R.drawable.marker));
-                        map.setLayoutParams(new LinearLayout.LayoutParams(1430, 1375));
+                        map.setLayoutParams(new LinearLayout.LayoutParams(1430, 1375)); // ** 크기 조절
                         setText(j); clicked[j] = true; clicked[list.get(fin-1)] = false;
                     }
                     cameraUpdate = CameraUpdate.scrollTo(new LatLng(info.get(j).latitude, info.get(j).longitude)).animate(CameraAnimation.Easing);
@@ -397,17 +419,17 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     nlist.add(nfin, j);
                     if(nclicked[j] == false && (nfin == 0 || nlist.get(nfin-1) == j)) {
                         nmarkers.get(j).setIcon(OverlayImage.fromResource(R.drawable.nmarker_clicked));
-                        map.setLayoutParams(new LinearLayout.LayoutParams(1430, 1375));
+                        map.setLayoutParams(new LinearLayout.LayoutParams(1430, 1375)); // ** 크기 조절
                         setText(j); nclicked[j] = true;
                     } else if(nclicked[j] == true && nlist.get(nfin-1) == j){
                         nmarkers.get(j).setIcon(OverlayImage.fromResource(R.drawable.nmarker));
-                        map.setLayoutParams(new LinearLayout.LayoutParams(1430, 2450));
+                        map.setLayoutParams(new LinearLayout.LayoutParams(1430, 2450)); // ** 크기 조절
                         nclicked[j] = false;
                     }
                     else if(nclicked[j] == false && nlist.get(nfin-1) != j){
                         nmarkers.get(j).setIcon(OverlayImage.fromResource(R.drawable.nmarker_clicked));
                         nmarkers.get(nlist.get(nfin-1)).setIcon(OverlayImage.fromResource(R.drawable.nmarker));
-                        map.setLayoutParams(new LinearLayout.LayoutParams(1430, 1375));
+                        map.setLayoutParams(new LinearLayout.LayoutParams(1430, 1375)); // ** 크기 조절
                         setText(j); nclicked[j] = true; nclicked[nlist.get(nfin-1)] = false;
                     }
                     cameraUpdate = CameraUpdate.scrollTo(new LatLng(ninfo.get(j).latitude, ninfo.get(j).longitude)).animate(CameraAnimation.Easing);
@@ -422,7 +444,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private void setText(int idx){
         if(naverMap.isNightModeEnabled() == false){
             name.setText(pharmacy.get(idx).name);
-            address.setText(pharmacy.get(idx).address.replace("전라북도 전주시 덕진구", ""));
+            address.setText(pharmacy.get(idx).address.replace("전라북도 전주시 덕진구", "").replace("전북 전주시 덕진구", ""));
             phonenum.setText(pharmacy.get(idx).phonenum);
             worktime.setText(pharmacy.get(idx).worktime);
             distance_t.setText(info.get(idx).distance+"m");
@@ -430,7 +452,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
         else{
             name.setText(npharmacy.get(idx).name);
-            address.setText(npharmacy.get(idx).address.replace("전라북도 전주시 덕진구", ""));
+            address.setText(npharmacy.get(idx).address.replace("전라북도 전주시 덕진구", "").replace("전북 전주시 덕진구", ""));
             phonenum.setText(npharmacy.get(idx).phonenum);
             worktime.setText(npharmacy.get(idx).worktime);
             distance_t.setText(ninfo.get(idx).distance+"m");
